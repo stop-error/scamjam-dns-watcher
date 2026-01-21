@@ -1,4 +1,4 @@
-module scamjam-dns-watcher
+module github.com/stop-error/scamjam-dns-watcher
 
 go 1.25.5
 
