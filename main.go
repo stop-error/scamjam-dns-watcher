@@ -53,7 +53,7 @@ func (p *program) Start(s service.Service) error {
 		case len(currentLogPath) <= 0 || len(oldLogPath) <= 0:
 			dlog.Error("Could not get log file path! Will not run log cleanup. Logging will be console only.")
 		default:
-			err := CleanupLogs(currentLogPath, oldLogPath)
+			err := cleanupLogs(currentLogPath, oldLogPath)
 			if err != nil {
 				dlog.Error("Error cleaning up log files! Will try to continue, but log files may grow to unmanagable size.")
 			}
@@ -97,7 +97,7 @@ func (p *program) run() {
 
 				dlog.Notice("Tick! " + tm.String())
 				
-				if !TestDNS() {
+				if !testDNS() {
 					dlog.Error("Error in response from scamjam-dns-server!")
 					
 					if watchdogRunning == true {

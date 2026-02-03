@@ -8,6 +8,7 @@ require (
 	github.com/kardianos/service v1.2.4
 	github.com/miekg/dns v1.1.70
 	github.com/nmrshll/go-cp v0.0.0-20180115193924-61436d3b7cfa
+	github.com/rs/zerolog v1.34.0
 )
 
 require (
@@ -64,17 +65,17 @@ require (
 	github.com/prometheus/common v0.60.1 // indirect
 	github.com/prometheus/procfs v0.15.1 // indirect
 	github.com/prometheus/prom2json v1.3.3 // indirect
-	github.com/qdm12/gosettings v0.4.4 // indirect
 	github.com/quic-go/qpack v0.5.1 // indirect
 	github.com/quic-go/quic-go v0.54.0 // indirect
 	github.com/rivo/uniseg v0.4.4 // indirect
-	github.com/rs/zerolog v1.34.0 // indirect
+	github.com/rogpeppe/go-internal v1.13.1 // indirect
 	github.com/spf13/afero v1.9.5 // indirect
 	github.com/spf13/cast v1.6.0 // indirect
 	github.com/spf13/cobra v1.8.1 // indirect
 	github.com/spf13/jwalterweatherman v1.1.0 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/spf13/viper v1.16.0 // indirect
+	github.com/stretchr/testify v1.11.1 // indirect
 	github.com/subosito/gotenv v1.4.2 // indirect
 	github.com/u-root/uio v0.0.0-20240118234441-a3c409a6018e // indirect
 	github.com/vishvananda/netlink v1.2.1-beta.2 // indirect
@@ -93,7 +94,6 @@ require (
 )
 
 require (
-	github.com/qdm12/dns/v2 v2.0.0-rc10
 	golang.org/x/mod v0.31.0 // indirect
 	golang.org/x/net v0.48.0 // indirect
 	golang.org/x/sync v0.19.0 // indirect

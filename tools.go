@@ -2,10 +2,9 @@ package main
 
 import (
 	"net"
-	"net/netip"
+	// "net/netip"
 	"os"
-	"reflect"
-	"strconv"
+	// "strconv"
 	"time"
 	"fmt"
 	"io"
@@ -13,7 +12,7 @@ import (
 
 	"github.com/jedisct1/dlog"
 	"github.com/miekg/dns"
-	"github.com/qdm12/dns/v2/pkg/nameserver"
+	// "github.com/qdm12/dns/v2/pkg/nameserver"
 	"github.com/nmrshll/go-cp"
 	"github.com/rs/zerolog"
 
@@ -21,8 +20,12 @@ import (
 
 )
 
-func TestDNS() bool {
+func testDNS() bool {
 	testDomains := [2]string{"connectivity-check.ubuntu.com.", "dns.msftncsi.com."}
+	ipv4Address := "127.0.0.3:53"
+	ipv6Address := "[::1]:53"
+	var hostDnsServers []string
+	hostDnsServers = append(hostDnsServers, ipv4Address, ipv6Address)
 	var testOK []string
 	
 	for i := 0; i < len(testDomains); i++ {
@@ -35,17 +38,21 @@ func TestDNS() bool {
 			Timeout: 5 * time.Second,
 		}
 
-		in, _, err := c.Exchange(m, "127.0.0.3:53") //This should not be hard-coded
-		switch {
-			case err != nil || len(in.Answer) <= 0:
-				dlog.Error("Error resolving testdomain:" + testDomains[i] + err.Error())
-				continue
-			default:
-				dlog.Info("Successfully resolved testdomain testdomain:" + testDomains[i])
-				testOK = append(testOK, testDomains[i])
-		}
+		for i := 0; i < len(hostDnsServers); i++ {
+			dlog.Notice("Testing address " + hostDnsServers[i])
+			in, _, err := c.Exchange(m, hostDnsServers[i]) //This should not be hard-coded
+			switch {
+				case err != nil || len(in.Answer) <= 0:
+					dlog.Error("Error resolving testdomain:" + testDomains[i] + err.Error())
+					continue
+				default:
+					dlog.Info("Successfully resolved testdomain testdomain: " + testDomains[i])
+					testOK = append(testOK, testDomains[i])
+			}
 		
+		}
 	}
+
 
 	if len(testOK) > 0 {
 		dlog.Info("One or more testdomains resolved successfully, TestDNS true (successfull):")
@@ -57,51 +64,39 @@ func TestDNS() bool {
 
 }
 
-func GetHostDnsServersIPv4() ([]netip.Addr, error) {
+// func getHostDnsServersIPv4() ([]netip.Addr, []netip.Addr, error) {
 
-	var ipv4HostDnsConfig []netip.Addr
+// 	var ipv4HostDnsConfig []netip.Addr
+// 	var ipv6HostDnsConfig []netip.Addr
 
-	hostDnsConfig, err := nameserver.GetDNSServers()
-	if err != nil {
-		dlog.Error("Error retriving host DNS config!")
-		return nil, err
-		}
+// 	hostDnsConfig, err := nameserver.GetDNSServers()
+// 	if err != nil {
+// 		dlog.Error("Error retriving host DNS config!")
+// 		return nil, nil, err
+// 		}
 
-	for i := 0; i < len(hostDnsConfig); i++ {
+// 	for i := 0; i < len(hostDnsConfig); i++ {
 
-		interfaceIndexAsString := strconv.Itoa(i)
-		dlog.Notice("on interface " + interfaceIndexAsString)
+// 		interfaceIndexAsString := strconv.Itoa(i)
+// 		dlog.Notice("on interface " + interfaceIndexAsString + " in interface array")
 
-		if  hostDnsConfig[i].Is6() == true {
-			dlog.Notice("Skipping ipv6 address with interface index" + interfaceIndexAsString)
+// 		if  hostDnsConfig[i].Is6() == true {
+// 			dlog.Notice("Found ipv6 interface:" + interfaceIndexAsString)
+// 			ipv6HostDnsConfig = append(ipv6HostDnsConfig, hostDnsConfig[i])
 			
-		}
+// 		}
 
-		if  hostDnsConfig[i].Is4() == true {
-			ipv4HostDnsConfig = append(ipv4HostDnsConfig, hostDnsConfig[i])
+// 		if  hostDnsConfig[i].Is4() == true {
+// 			dlog.Notice("Found ipv4 interface:" + interfaceIndexAsString)
+// 			ipv4HostDnsConfig = append(ipv4HostDnsConfig, hostDnsConfig[i])
 			
-		}
-	}
-	return ipv4HostDnsConfig, nil
-}
+// 		}
+// 	}
+// 	return ipv4HostDnsConfig, ipv6HostDnsConfig, nil
+// }
 
-func TestHostDnsServersScamJam(dnsConfig []netip.Addr) (bool) { //probably want to return an error
 
-	proxyAddr, _ := netip.ParseAddr("127.0.0.3")
-	var interfacesSetToScamJamDNS []netip.Addr
-
-	for i := 0; i < len(dnsConfig); i++ {
-		if dnsConfig[i] == proxyAddr {
-			dlog.Notice("interface index " + strconv.Itoa(i) + " is set to scamjam-dns-server")
-			interfacesSetToScamJamDNS = append(interfacesSetToScamJamDNS, dnsConfig[i])
-		}
-	}
-
-	return reflect.DeepEqual(dnsConfig, interfacesSetToScamJamDNS)
-
-}
-
-func CleanupLogs(CurrentLog string, OldLog string) (error) {
+func cleanupLogs(CurrentLog string, OldLog string) (error) {
 
 	fmt.Fprintln(os.Stdout, "Running log cleanup")
 
@@ -118,7 +113,7 @@ func CleanupLogs(CurrentLog string, OldLog string) (error) {
 		fmt.Fprintln(os.Stdout, "Log cleanup: .log file becomes .old file")
 		errCopy := cp.CopyFile(CurrentLog, OldLog)
 		if errCopy != nil {
-			fmt.Fprintln(os.Stderr, "Error copying .log file to .old file!" + err.Error())
+			fmt.Fprintln(os.Stderr, "Error copying .log file to .old file!" + errCopy.Error())
 			return err
 		}
 		fmt.Fprintln(os.Stdout, "Log cleanup: deleting .log file")
