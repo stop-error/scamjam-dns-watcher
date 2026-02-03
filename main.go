@@ -24,14 +24,22 @@
 package main
 
 import (
-	"fmt"
-	"os"
 	"time"
 
+	"github.com/jedisct1/dlog"
 	"github.com/kardianos/service"
-	"github.com/nextdns/nextdns/host"
 
+	watchdog "github.com/Control-D-Inc/ctrld/cmd/cli"
 )
+
+var currentLogPath, oldLogPath = getLogFilePaths()
+
+var watchdogRunning bool
+
+var ctrldProg watchdog.Prog
+
+var MainWatchdogStopCh = make(chan bool)
+// var ctrldConfig ctrld.Config
 
 type program struct{
 	exit chan struct{}
@@ -39,51 +47,92 @@ type program struct{
 
 func (p *program) Start(s service.Service) error {
 	// Start should not block. Do the actual work async.
+	dlog.Init("scamjam-dns-watcher", dlog.SeverityNotice, "")
+
+	switch {
+		case len(currentLogPath) <= 0 || len(oldLogPath) <= 0:
+			dlog.Error("Could not get log file path! Will not run log cleanup. Logging will be console only.")
+		default:
+			err := CleanupLogs(currentLogPath, oldLogPath)
+			if err != nil {
+				dlog.Error("Error cleaning up log files! Will try to continue, but log files may grow to unmanagable size.")
+			}
+			dlog.UseLogFile(currentLogPath)
+	}
+
+
+	if len(currentLogPath) <= 0 || len(oldLogPath) <= 0 {
+		dlog.Error("Could not get log file path! Will not run log cleanup. Logging will be console only.")
+	} else {
+
+	}
+
+
+	ctrldInit() //move this into custom ctrld
+	watchdog.InitConsoleLogging()
+	ctrldProg.InitLogging(false)
+	ctrldProg.SetMainWatchdogStopCh(MainWatchdogStopCh)
+	ctrldProg.PreRun()
+
+	dlog.Notice("Resetting DNS for watchdog start")
+	ctrldProg.ResetDNS(false, true)
+
+	dlog.Notice("Starting watchdog goroutine")
+	go ctrldProg.SetDNS()
+	watchdogRunning = true
+
 	go p.run()
+
 	return nil
+	
 }
 
 func (p *program) run() {
 
-	ticker := time.NewTicker(10 * time.Second)
+	ticker := time.NewTicker(40 * time.Second)
 	for {
-		fmt.Fprintln(os.Stdout, "Going to sleep for 10 seconds")
+		dlog.Notice("Going to sleep for 40 seconds")
 		select {
 		case tm := <-ticker.C:
 
-				fmt.Fprintln(os.Stdout, "Tick! " + tm.String())
-			
-				hostDns, err := GetHostDnsServersIPv4()
-				if err != nil {
-					fmt.Fprintln(os.Stderr, "Error from GetHostDnsServersIPv4, will not make changes to host dns config")
-					continue
-				}
+				dlog.Notice("Tick! " + tm.String())
 				
-				isHostDnsScamJam := TestHostDnsServersScamJam(hostDns)
-				
-				err = TestDNS()
-				if err != nil {
-					fmt.Fprintln(os.Stderr, "Error in response from scamjam-dns-server! Resetting host DNS config to DHCP")
-					if isHostDnsScamJam == false {
-						fmt.Fprintln(os.Stderr, "Host is not configured to use scamjam-dns-server, no need to reset dns to dhcp.")
-						break
+				if !TestDNS() {
+					dlog.Error("Error in response from scamjam-dns-server!")
+					
+					if watchdogRunning == true {
+						MainWatchdogStopCh <- true
+						dlog.Notice("Watchdog should now be closed")
+						dlog.Notice("Waiting for waitgroup to return...")
+						ctrldProg.DnsWg.Wait()
+						watchdogRunning = false
+						dlog.Notice("Resetting DNS...")
+						ctrldProg.ResetDNS(false, true)
 					}
-					host.ResetDNS()
-					break
+					
+
+				} else {
+					dlog.Notice("TestDNS successful")
+					if watchdogRunning == false {
+						dlog.Notice("Restarting watchdog")
+						ctrldProg.PreRun()
+						go ctrldProg.SetDNS()
+						watchdogRunning = true
+					}
+					
+
 				}
-				
-				
-				switch isHostDnsScamJam {
-				case true:
-					fmt.Fprintln(os.Stdout, "All interfaces configured for scamjam-dns-server")
-				case false:
-					fmt.Fprintln(os.Stdout, "Host not configured for scamjam-dns-server on all interfaces, setting DNS.")
-					host.SetDNS("127.0.0.3")
-				
-				}
-			
-	
 		case <-p.exit:
+			dlog.Notice("scamjam-dns-watchdog has recieved exit signal!")
+				if watchdogRunning == true {
+					MainWatchdogStopCh <- true
+					dlog.Notice("Sending close signal to watchdog")
+					dlog.Notice("Waiting for waitgroup to return...")
+					ctrldProg.DnsWg.Wait()
+					watchdogRunning = false
+					dlog.Notice("Resetting host DNS settings")
+					ctrldProg.ResetDNS(false, true)
+				}
 			ticker.Stop()
 		}
 	}
@@ -93,10 +142,12 @@ func (p *program) run() {
 
 func (p *program) Stop(s service.Service) error {
 	// Stop should not block. Return with a few seconds.
+	close(p.exit)
 	return nil
 }
 
 func main() {
+	
 	svcConfig := &service.Config{
 		Name:        "scamjam-dns-watcher",
 		DisplayName: "ScamJam DNS Watcher",
@@ -106,10 +157,10 @@ func main() {
 	prg := &program{}
 	s, err := service.New(prg, svcConfig)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, err.Error())
+		dlog.Error(err.Error())
 	}
 	err = s.Run()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, err.Error())
+		dlog.Error(err.Error())
 	}
 }

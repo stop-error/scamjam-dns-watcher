@@ -1,37 +1,60 @@
 package main
 
 import (
-	"errors"
-	"fmt"
 	"net"
 	"net/netip"
 	"os"
 	"reflect"
 	"strconv"
 	"time"
+	"fmt"
+	"io"
+	"path/filepath"
 
+	"github.com/jedisct1/dlog"
 	"github.com/miekg/dns"
 	"github.com/qdm12/dns/v2/pkg/nameserver"
+	"github.com/nmrshll/go-cp"
+	"github.com/rs/zerolog"
+
+	watchdog "github.com/Control-D-Inc/ctrld/cmd/cli"
+
 )
 
-func TestDNS() error {
-	testdomain := "internetbeacon.msedge.net."
-	m := new(dns.Msg)
-	m.SetQuestion(testdomain, dns.TypeA)
+func TestDNS() bool {
+	testDomains := [2]string{"connectivity-check.ubuntu.com.", "dns.msftncsi.com."}
+	var testOK []string
+	
+	for i := 0; i < len(testDomains); i++ {
 
-	c := new(dns.Client)
-	c.Dialer = &net.Dialer{
-		Timeout: 5 * time.Second,
+		m := new(dns.Msg)
+		m.SetQuestion(testDomains[i], dns.TypeA)
+
+		c := new(dns.Client)
+		c.Dialer = &net.Dialer{
+			Timeout: 5 * time.Second,
+		}
+
+		in, _, err := c.Exchange(m, "127.0.0.3:53") //This should not be hard-coded
+		switch {
+			case err != nil || len(in.Answer) <= 0:
+				dlog.Error("Error resolving testdomain:" + testDomains[i] + err.Error())
+				continue
+			default:
+				dlog.Info("Successfully resolved testdomain testdomain:" + testDomains[i])
+				testOK = append(testOK, testDomains[i])
+		}
+		
 	}
 
-	in, _, err := c.Exchange(m, "127.0.0.3:53") //This should not be hard-coded
-	if err != nil {
-		return err
+	if len(testOK) > 0 {
+		dlog.Info("One or more testdomains resolved successfully, TestDNS true (successfull):")
+		return true
+	} else {
+		dlog.Error("Unable to resolve any test domain successfully, TestDNS false (unsuccessfull)")
+		return false
 	}
-	if len(in.Answer) <= 0 {
-		return err
-	}
-	return nil
+
 }
 
 func GetHostDnsServersIPv4() ([]netip.Addr, error) {
@@ -40,16 +63,17 @@ func GetHostDnsServersIPv4() ([]netip.Addr, error) {
 
 	hostDnsConfig, err := nameserver.GetDNSServers()
 	if err != nil {
-		return nil, errors.New("Error retriving host DNS config!")
+		dlog.Error("Error retriving host DNS config!")
+		return nil, err
 		}
 
 	for i := 0; i < len(hostDnsConfig); i++ {
 
 		interfaceIndexAsString := strconv.Itoa(i)
-		fmt.Fprintln(os.Stdout, "on interface " + interfaceIndexAsString)
+		dlog.Notice("on interface " + interfaceIndexAsString)
 
 		if  hostDnsConfig[i].Is6() == true {
-			fmt.Fprintln(os.Stdout, "Skipping ipv6 address with interface index" + interfaceIndexAsString)
+			dlog.Notice("Skipping ipv6 address with interface index" + interfaceIndexAsString)
 			
 		}
 
@@ -61,19 +85,73 @@ func GetHostDnsServersIPv4() ([]netip.Addr, error) {
 	return ipv4HostDnsConfig, nil
 }
 
-func TestHostDnsServersScamJam (dnsConfig []netip.Addr) (bool) { //probably want to return an error
+func TestHostDnsServersScamJam(dnsConfig []netip.Addr) (bool) { //probably want to return an error
 
 	proxyAddr, _ := netip.ParseAddr("127.0.0.3")
 	var interfacesSetToScamJamDNS []netip.Addr
 
 	for i := 0; i < len(dnsConfig); i++ {
 		if dnsConfig[i] == proxyAddr {
-			fmt.Fprintln(os.Stdout, "interface index " + strconv.Itoa(i) + " is set to scamjam-dns-server")
+			dlog.Notice("interface index " + strconv.Itoa(i) + " is set to scamjam-dns-server")
 			interfacesSetToScamJamDNS = append(interfacesSetToScamJamDNS, dnsConfig[i])
 		}
 	}
 
 	return reflect.DeepEqual(dnsConfig, interfacesSetToScamJamDNS)
 
+}
+
+func CleanupLogs(CurrentLog string, OldLog string) (error) {
+
+	fmt.Fprintln(os.Stdout, "Running log cleanup")
+
+	if _, err := os.Stat(OldLog); err == nil {
+		fmt.Fprintln(os.Stdout, "Log cleanup: Deleting current .old file")
+		err := os.Remove(OldLog)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "Error deleting .old file!" + err.Error())
+			return err
+		}
+	}
+
+	if _, err := os.Stat(CurrentLog); err == nil {
+		fmt.Fprintln(os.Stdout, "Log cleanup: .log file becomes .old file")
+		errCopy := cp.CopyFile(CurrentLog, OldLog)
+		if errCopy != nil {
+			fmt.Fprintln(os.Stderr, "Error copying .log file to .old file!" + err.Error())
+			return err
+		}
+		fmt.Fprintln(os.Stdout, "Log cleanup: deleting .log file")
+		errRemove := os.Remove(CurrentLog)
+		if errRemove != nil {
+			fmt.Fprintln(os.Stderr, "Error deleting .log file! Logs will not rotate correctly" + errRemove.Error())
+			return err
+		}
+	}	
+	return nil
+}
+
+
+func getLogFilePaths() (string, string) {
+	executable, err := os.Executable()
+	if err != nil { 
+		dlog.Error("getSafeBrowsingLogPath: Could not get root path of executable file! Logging will be console only." + err.Error())
+		return "", ""
+	} 
+
+	currentLogPath := filepath.Dir(executable) + "\\scamjam-dns-watcher.log"
+	oldLogPath := filepath.Dir(executable) + "\\scamjam-dns-watcher.old"
+	
+
+	return currentLogPath, oldLogPath
+}
+
+
+
+	
+
+func ctrldInit() { //move this into custom ctrld
+	l := zerolog.New(io.Discard)
+	watchdog.MainLog.Store(&l)
 }
 
