@@ -94,6 +94,8 @@ require (
 )
 
 require (
+	github.com/qdm12/dns/v2 v2.0.0-rc10 // indirect
+	github.com/qdm12/gosettings v0.4.3 // indirect
 	golang.org/x/mod v0.31.0 // indirect
 	golang.org/x/net v0.48.0 // indirect
 	golang.org/x/sync v0.19.0 // indirect

@@ -25,21 +25,21 @@ package main
 
 import (
 	"time"
-
-	"github.com/jedisct1/dlog"
-	"github.com/kardianos/service"
+	"os"
+	"fmt"
 
 	watchdog "github.com/Control-D-Inc/ctrld/cmd/cli"
+	"github.com/kardianos/service"
+	"github.com/rs/zerolog"
 )
-
-var currentLogPath, oldLogPath = getLogFilePaths()
 
 var watchdogRunning bool
 
 var ctrldProg watchdog.Prog
 
 var MainWatchdogStopCh = make(chan bool)
-// var ctrldConfig ctrld.Config
+
+var logger zerolog.Logger
 
 type program struct{
 	exit chan struct{}
@@ -47,26 +47,6 @@ type program struct{
 
 func (p *program) Start(s service.Service) error {
 	// Start should not block. Do the actual work async.
-	dlog.Init("scamjam-dns-watcher", dlog.SeverityNotice, "")
-
-	switch {
-		case len(currentLogPath) <= 0 || len(oldLogPath) <= 0:
-			dlog.Error("Could not get log file path! Will not run log cleanup. Logging will be console only.")
-		default:
-			err := cleanupLogs(currentLogPath, oldLogPath)
-			if err != nil {
-				dlog.Error("Error cleaning up log files! Will try to continue, but log files may grow to unmanagable size.")
-			}
-			dlog.UseLogFile(currentLogPath)
-	}
-
-
-	if len(currentLogPath) <= 0 || len(oldLogPath) <= 0 {
-		dlog.Error("Could not get log file path! Will not run log cleanup. Logging will be console only.")
-	} else {
-
-	}
-
 
 	ctrldInit() //move this into custom ctrld
 	watchdog.InitConsoleLogging()
@@ -74,10 +54,10 @@ func (p *program) Start(s service.Service) error {
 	ctrldProg.SetMainWatchdogStopCh(MainWatchdogStopCh)
 	ctrldProg.PreRun()
 
-	dlog.Notice("Resetting DNS for watchdog start")
+	logger.Info().Msg("Resetting DNS for watchdog start")
 	ctrldProg.ResetDNS(false, true)
 
-	dlog.Notice("Starting watchdog goroutine")
+	logger.Info().Msg("Starting watchdog goroutine")
 	go ctrldProg.SetDNS()
 	watchdogRunning = true
 
@@ -89,32 +69,32 @@ func (p *program) Start(s service.Service) error {
 
 func (p *program) run() {
 
-	ticker := time.NewTicker(40 * time.Second)
+	ticker := time.NewTicker(25 * time.Second)
 	for {
-		dlog.Notice("Going to sleep for 40 seconds")
+		logger.Info().Msg("Going to sleep for 25 seconds")
 		select {
 		case tm := <-ticker.C:
 
-				dlog.Notice("Tick! " + tm.String())
+				logger.Info().Msg("Tick! " + tm.String())
 				
 				if !testDNS() {
-					dlog.Error("Error in response from scamjam-dns-server!")
+					logger.Error().Msg("Error in response from scamjam-dns-server!")
 					
 					if watchdogRunning == true {
 						MainWatchdogStopCh <- true
-						dlog.Notice("Watchdog should now be closed")
-						dlog.Notice("Waiting for waitgroup to return...")
+						logger.Info().Msg("Watchdog should now be closed")
+						logger.Info().Msg("Waiting for waitgroup to return...")
 						ctrldProg.DnsWg.Wait()
 						watchdogRunning = false
-						dlog.Notice("Resetting DNS...")
+						logger.Info().Msg("Resetting DNS...")
 						ctrldProg.ResetDNS(false, true)
 					}
 					
 
 				} else {
-					dlog.Notice("TestDNS successful")
+					logger.Info().Msg("TestDNS successful")
 					if watchdogRunning == false {
-						dlog.Notice("Restarting watchdog")
+						logger.Info().Msg("Restarting watchdog")
 						ctrldProg.PreRun()
 						go ctrldProg.SetDNS()
 						watchdogRunning = true
@@ -123,14 +103,14 @@ func (p *program) run() {
 
 				}
 		case <-p.exit:
-			dlog.Notice("scamjam-dns-watchdog has recieved exit signal!")
+			logger.Info().Msg("scamjam-dns-watchdog has recieved exit signal!")
 				if watchdogRunning == true {
 					MainWatchdogStopCh <- true
-					dlog.Notice("Sending close signal to watchdog")
-					dlog.Notice("Waiting for waitgroup to return...")
+					logger.Info().Msg("Sending close signal to watchdog")
+					logger.Info().Msg("Waiting for waitgroup to return...")
 					ctrldProg.DnsWg.Wait()
 					watchdogRunning = false
-					dlog.Notice("Resetting host DNS settings")
+					logger.Info().Msg("Resetting host DNS settings")
 					ctrldProg.ResetDNS(false, true)
 				}
 			ticker.Stop()
@@ -147,6 +127,20 @@ func (p *program) Stop(s service.Service) error {
 }
 
 func main() {
+
+	
+	useLogFile, logPath := initLogger()
+	if useLogFile == true {
+		logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0664)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "Error opening log file! logging will be console only.")
+			logger = zerolog.New(os.Stderr).With().Caller().Logger()
+		} else {
+			multi := zerolog.MultiLevelWriter(os.Stdout, logFile)
+			logger = zerolog.New(multi).With().Caller().Logger()
+		}
+		
+	}
 	
 	svcConfig := &service.Config{
 		Name:        "scamjam-dns-watcher",
@@ -157,10 +151,10 @@ func main() {
 	prg := &program{}
 	s, err := service.New(prg, svcConfig)
 	if err != nil {
-		dlog.Error(err.Error())
+		logger.Error().Msg(err.Error())
 	}
 	err = s.Run()
 	if err != nil {
-		dlog.Error(err.Error())
+		logger.Error().Msg(err.Error())
 	}
 }
