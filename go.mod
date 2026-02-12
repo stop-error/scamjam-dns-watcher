@@ -4,10 +4,8 @@ go 1.25.5
 
 require (
 	github.com/Control-D-Inc/ctrld v1.4.9
-	github.com/jedisct1/dlog v0.0.0-20241212093805-3c5fd791b405
 	github.com/kardianos/service v1.2.4
 	github.com/miekg/dns v1.1.70
-	github.com/nmrshll/go-cp v0.0.0-20180115193924-61436d3b7cfa
 	github.com/rs/zerolog v1.34.0
 )
 
@@ -32,7 +30,6 @@ require (
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/go-cmp v0.6.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
-	github.com/hashicorp/go-syslog v1.0.0 // indirect
 	github.com/hashicorp/golang-lru/v2 v2.0.1 // indirect
 	github.com/hashicorp/hcl v1.0.0 // indirect
 	github.com/illarion/gonotify/v2 v2.0.3 // indirect
@@ -94,8 +91,6 @@ require (
 )
 
 require (
-	github.com/qdm12/dns/v2 v2.0.0-rc10 // indirect
-	github.com/qdm12/gosettings v0.4.3 // indirect
 	golang.org/x/mod v0.31.0 // indirect
 	golang.org/x/net v0.48.0 // indirect
 	golang.org/x/sync v0.19.0 // indirect
